@@ -215,3 +215,23 @@ details summary:hover { color: var(--text); }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a5070; }
+
+/* Grid layout */
+.grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1rem; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.col { min-width: 0; }
+.card { background: #0f1a2b; border: 1px solid #21304a; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+.card h2 { margin: 0 0 0.75rem 0; font-size: 1.1rem; color: #4ade80; }
+
+/* Status */
+.status-box { font-size: 0.9rem; }
+.status-ok { color: #4ade80; font-weight: 600; margin-bottom: 0.5rem; }
+.status-error { color: #f87171; font-weight: 600; }
+.status-detail { color: #93a3bf; font-size: 0.85rem; }
+
+/* Sources */
+.sources-box { font-size: 0.85rem; max-height: 300px; overflow-y: auto; }
+.sources-list { padding-right: 1.2rem; margin: 0; }
+.sources-list li { margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px dashed #21304a; color: #93a3bf; line-height: 1.5; }
+.sources-list li:last-child { border-bottom: none; }
+.muted { color: #93a3bf; }
