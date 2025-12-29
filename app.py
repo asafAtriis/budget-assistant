@@ -1,17 +1,32 @@
 """
-Budget Assistant - RAG Chatbot using AWS Bedrock Knowledge Base
-יועץ תקציב משפחתי - צ'אטבוט מבוסס RAG
+Budget Assistant - RAG Chatbot with AWS Bedrock
+יועץ תקציב משפחתי - תומך במצב RAG ומצב Agent
+
+Modes:
+  - RAG: Uses Knowledge Base directly (retrieve_and_generate)
+  - AGENT: Uses Bedrock Agent with Knowledge Base attached
 """
 import os
 import boto3
 from flask import Flask, request, jsonify, render_template
 
-# Configuration
+# ============== Configuration ==============
+
+# Mode: "RAG" or "AGENT"
+MODE = os.environ.get("MODE", "RAG").upper()
+
+# AWS Configuration
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+# RAG Mode Configuration
 KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
 MODEL_ID = os.environ.get("MODEL_ID", "anthropic.claude-3-5-haiku-20241022-v1:0")
 
-# System Prompt for the assistant
+# Agent Mode Configuration
+AGENT_ID = os.environ.get("AGENT_ID", "")
+AGENT_ALIAS_ID = os.environ.get("AGENT_ALIAS_ID", "")
+
+# System Prompt (for RAG mode)
 SYSTEM_PROMPT = """אתה יועץ פיננסי מומחה לניהול תקציב משפחתי בישראל.
 
 ## התפקיד שלך:
@@ -26,20 +41,15 @@ SYSTEM_PROMPT = """אתה יועץ פיננסי מומחה לניהול תקצי
 3. אם המידע לא מספיק - ציין זאת בכנות
 4. תן תשובות מעשיות וישימות
 5. השתמש בדוגמאות מספריות כשרלוונטי
-6. היה אמפתי ותומך - ניהול כספים יכול להיות מלחיץ
+6. היה אמפתי ותומך"""
 
-## פורמט תשובה:
-- תשובות ברורות ומאורגנות
-- פסקאות קצרות
-- נקודות עיקריות כשצריך
-- סיכום או המלצה בסוף כשרלוונטי"""
-
-# Generation configuration for Claude
 GENERATION_CONFIG = {
     "maxTokens": 1024,
     "temperature": 0.7,
     "topP": 0.9,
 }
+
+# ============== Flask App ==============
 
 app = Flask(__name__)
 _bedrock_agent_runtime = None
@@ -50,11 +60,13 @@ def get_bedrock_agent_runtime():
     global _bedrock_agent_runtime
     if _bedrock_agent_runtime is None:
         _bedrock_agent_runtime = boto3.client(
-            "bedrock-agent-runtime", 
+            "bedrock-agent-runtime",
             region_name=AWS_REGION
         )
     return _bedrock_agent_runtime
 
+
+# ============== RAG Mode Functions ==============
 
 def retrieve_from_knowledge_base(question: str, num_results: int = 5) -> list:
     """Retrieve relevant chunks from Knowledge Base."""
@@ -86,18 +98,17 @@ def retrieve_from_knowledge_base(question: str, num_results: int = 5) -> list:
     return contexts
 
 
-def generate_answer_with_context(question: str, contexts: list) -> str:
-    """Generate answer using Claude with retrieved context."""
+def query_knowledge_base_rag(question: str, num_results: int = 5) -> dict:
+    """Query using RAG mode - Knowledge Base with retrieve_and_generate."""
+    if not KNOWLEDGE_BASE_ID:
+        raise ValueError("KNOWLEDGE_BASE_ID not configured")
+    
     client = get_bedrock_agent_runtime()
     
-    # Build context string
-    context_parts = []
-    for i, ctx in enumerate(contexts, 1):
-        context_parts.append(f"[מקור {i}: {ctx['source']}]\n{ctx['text']}")
+    # First retrieve contexts for display
+    contexts = retrieve_from_knowledge_base(question, num_results)
     
-    context_string = "\n\n---\n\n".join(context_parts) if context_parts else "לא נמצא מידע רלוונטי"
-    
-    # Use retrieve_and_generate with prompt template
+    # Generate answer
     response = client.retrieve_and_generate(
         input={"text": question},
         retrieveAndGenerateConfiguration={
@@ -107,7 +118,7 @@ def generate_answer_with_context(question: str, contexts: list) -> str:
                 "modelArn": f"arn:aws:bedrock:{AWS_REGION}::foundation-model/{MODEL_ID}",
                 "retrievalConfiguration": {
                     "vectorSearchConfiguration": {
-                        "numberOfResults": len(contexts) if contexts else 5
+                        "numberOfResults": num_results
                     }
                 },
                 "generationConfiguration": {
@@ -130,21 +141,9 @@ $query$
         }
     )
     
-    return response.get("output", {}).get("text", "לא הצלחתי ליצור תשובה")
-
-
-def query_knowledge_base(question: str, num_results: int = 5) -> dict:
-    """Main function to query KB and generate answer."""
-    if not KNOWLEDGE_BASE_ID:
-        raise ValueError("KNOWLEDGE_BASE_ID not configured")
+    answer = response.get("output", {}).get("text", "לא הצלחתי ליצור תשובה")
     
-    # Step 1: Retrieve relevant contexts
-    contexts = retrieve_from_knowledge_base(question, num_results)
-    
-    # Step 2: Generate answer with context
-    answer = generate_answer_with_context(question, contexts)
-    
-    # Step 3: Format context for response
+    # Format contexts for display
     formatted_contexts = []
     for ctx in contexts:
         text = ctx["text"]
@@ -156,8 +155,64 @@ def query_knowledge_base(question: str, num_results: int = 5) -> dict:
     return {
         "answer": answer,
         "context": formatted_contexts,
-        "sources_count": len(contexts)
+        "mode": "RAG"
     }
+
+
+# ============== Agent Mode Functions ==============
+
+def query_with_agent(question: str, session_id: str = "default") -> dict:
+    """Query using Agent mode - Bedrock Agent."""
+    if not AGENT_ID or not AGENT_ALIAS_ID:
+        raise ValueError("AGENT_ID or AGENT_ALIAS_ID not configured")
+    
+    client = get_bedrock_agent_runtime()
+    
+    response = client.invoke_agent(
+        agentId=AGENT_ID,
+        agentAliasId=AGENT_ALIAS_ID,
+        sessionId=session_id,
+        inputText=question
+    )
+    
+    # Process the streaming response
+    answer = ""
+    citations = []
+    
+    for event in response.get("completion", []):
+        if "chunk" in event:
+            chunk = event["chunk"]
+            if "bytes" in chunk:
+                answer += chunk["bytes"].decode("utf-8")
+            
+            # Extract citations if available
+            if "attribution" in chunk:
+                for citation in chunk["attribution"].get("citations", []):
+                    for ref in citation.get("retrievedReferences", []):
+                        content = ref.get("content", {}).get("text", "")
+                        location = ref.get("location", {}).get("s3Location", {}).get("uri", "")
+                        if content:
+                            source = location.split("/")[-1] if location else "מסמך"
+                            source = source.replace(".txt", "").replace("_", " ")
+                            if len(content) > 250:
+                                content = content[:250] + "..."
+                            citations.append(f"📄 {source}: {content}")
+    
+    return {
+        "answer": answer,
+        "context": citations[:5],
+        "mode": "AGENT"
+    }
+
+
+# ============== Main Query Function ==============
+
+def process_question(question: str, num_results: int = 5, session_id: str = "default") -> dict:
+    """Process question based on configured mode."""
+    if MODE == "AGENT":
+        return query_with_agent(question, session_id)
+    else:  # Default to RAG
+        return query_knowledge_base_rag(question, num_results)
 
 
 # ============== Routes ==============
@@ -171,13 +226,21 @@ def home():
 @app.route("/health")
 def health():
     """Health check endpoint."""
-    return jsonify({
+    config = {
         "status": "ok",
-        "knowledge_base_configured": bool(KNOWLEDGE_BASE_ID),
-        "knowledge_base_id": KNOWLEDGE_BASE_ID[:10] + "..." if KNOWLEDGE_BASE_ID else None,
-        "model": MODEL_ID,
+        "mode": MODE,
         "region": AWS_REGION
-    })
+    }
+    
+    if MODE == "AGENT":
+        config["agent_configured"] = bool(AGENT_ID and AGENT_ALIAS_ID)
+        config["agent_id"] = AGENT_ID[:10] + "..." if AGENT_ID else None
+    else:
+        config["knowledge_base_configured"] = bool(KNOWLEDGE_BASE_ID)
+        config["knowledge_base_id"] = KNOWLEDGE_BASE_ID[:10] + "..." if KNOWLEDGE_BASE_ID else None
+        config["model"] = MODEL_ID
+    
+    return jsonify(config)
 
 
 @app.route("/ask", methods=["POST"])
@@ -185,31 +248,37 @@ def ask():
     """Handle user questions."""
     data = request.get_json(force=True, silent=True) or {}
     question = (data.get("question") or "").strip()
-    k = min(int(data.get("k", 5)), 10)  # Max 10 results
+    k = min(int(data.get("k", 5)), 10)
+    session_id = data.get("session_id", "default-session")
     
     if not question:
         return jsonify({"error": "נא לספק שאלה"}), 400
     
-    if not KNOWLEDGE_BASE_ID:
+    # Validate configuration based on mode
+    if MODE == "AGENT" and (not AGENT_ID or not AGENT_ALIAS_ID):
+        return jsonify({"error": "Agent לא מוגדר בשרת"}), 500
+    elif MODE == "RAG" and not KNOWLEDGE_BASE_ID:
         return jsonify({"error": "Knowledge Base לא מוגדר בשרת"}), 500
     
     try:
-        result = query_knowledge_base(question, num_results=k)
+        result = process_question(question, k, session_id)
         return jsonify({
             "question": question,
             "answer": result["answer"],
             "context": result["context"],
-            "sources_count": result["sources_count"],
-            "top_k": k
+            "mode": result["mode"]
         })
     except Exception as e:
         print(f"Error processing question: {e}")
-        return jsonify({"error": f"שגיאה בעיבוד השאלה: {str(e)}"}), 500
+        return jsonify({"error": f"שגיאה: {str(e)}"}), 500
 
 
 @app.route("/retrieve", methods=["POST"])
 def retrieve_only():
-    """Debug endpoint - retrieve without generating."""
+    """Debug endpoint - retrieve without generating (RAG mode only)."""
+    if MODE != "RAG":
+        return jsonify({"error": "Available only in RAG mode"}), 400
+    
     data = request.get_json(force=True, silent=True) or {}
     question = (data.get("question") or "").strip()
     k = min(int(data.get("k", 5)), 10)
@@ -234,16 +303,26 @@ def retrieve_only():
 # ============== Main ==============
 
 if __name__ == "__main__":
-    print("=" * 50)
+    print("=" * 60)
     print("🚀 Starting Budget Assistant")
-    print("=" * 50)
+    print("=" * 60)
     print(f"📍 Region: {AWS_REGION}")
-    print(f"🧠 Model: {MODEL_ID}")
-    print(f"📚 Knowledge Base: {KNOWLEDGE_BASE_ID or 'NOT SET!'}")
-    print("=" * 50)
+    print(f"🎛️  Mode: {MODE}")
+    print("-" * 60)
     
-    if not KNOWLEDGE_BASE_ID:
-        print("⚠️  WARNING: KNOWLEDGE_BASE_ID is not set!")
-        print("   Set it with: export KNOWLEDGE_BASE_ID=your-kb-id")
+    if MODE == "AGENT":
+        print(f"🤖 Agent ID: {AGENT_ID or '❌ NOT SET!'}")
+        print(f"🏷️  Alias ID: {AGENT_ALIAS_ID or '❌ NOT SET!'}")
+        if not AGENT_ID or not AGENT_ALIAS_ID:
+            print("\n⚠️  Set Agent variables:")
+            print("   export AGENT_ID=your-agent-id")
+            print("   export AGENT_ALIAS_ID=your-alias-id")
+    else:
+        print(f"📚 Knowledge Base: {KNOWLEDGE_BASE_ID or '❌ NOT SET!'}")
+        print(f"🧠 Model: {MODEL_ID}")
+        if not KNOWLEDGE_BASE_ID:
+            print("\n⚠️  Set Knowledge Base variable:")
+            print("   export KNOWLEDGE_BASE_ID=your-kb-id")
     
+    print("=" * 60)
     app.run(host="0.0.0.0", port=8000, debug=False)
