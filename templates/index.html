@@ -3,7 +3,7 @@
 <section class="grid">
   <!-- Chat Column -->
   <div class="col chat-col card">
-    <div class="robot-stage">
+    <div class="robot-container">
       <div id="robot" class="robot">
         <div class="antenna"><span class="tip"></span></div>
         <div class="head">
@@ -32,12 +32,14 @@
 
     <div class="examples">
       <p>שאלות לדוגמה:</p>
-      <button type="button" class="example-btn" data-question="כמה כסף צריך לשים בקרן חירום?">קרן חירום</button>
-      <button type="button" class="example-btn" data-question="מהן ההוצאות הטיפוסיות של משפחה בישראל?">הוצאות משפחה</button>
-      <button type="button" class="example-btn" data-question="איך אפשר לחסוך בהוצאות החודשיות?">טיפים לחיסכון</button>
-      <button type="button" class="example-btn" data-question="מה זה כלל 50/30/20 לניהול תקציב?">כלל התקציב</button>
-      <button type="button" class="example-btn" data-question="כמה קצבת ילדים מקבלים בישראל?">קצבאות</button>
-      <button type="button" class="example-btn" data-question="איך לנהל חובות והלוואות בצורה נכונה?">ניהול חובות</button>
+      <div class="example-buttons">
+        <button type="button" class="example-btn" data-question="כמה כסף צריך לשים בקרן חירום?">קרן חירום</button>
+        <button type="button" class="example-btn" data-question="מהן ההוצאות הטיפוסיות של משפחה בישראל?">הוצאות משפחה</button>
+        <button type="button" class="example-btn" data-question="איך אפשר לחסוך בהוצאות החודשיות?">טיפים לחיסכון</button>
+        <button type="button" class="example-btn" data-question="מה זה כלל 50/30/20 לניהול תקציב?">כלל התקציב</button>
+        <button type="button" class="example-btn" data-question="כמה קצבת ילדים מקבלים בישראל?">קצבאות</button>
+        <button type="button" class="example-btn" data-question="איך לנהל חובות והלוואות בצורה נכונה?">ניהול חובות</button>
+      </div>
     </div>
   </div>
 
@@ -59,15 +61,15 @@
 
 <script>
 (function() {
-  const msgs = document.getElementById("messages");
-  const form = document.getElementById("chat-form");
-  const input = document.getElementById("chat-input");
-  const status = document.getElementById("status");
-  const sources = document.getElementById("sources");
-  const robot = document.getElementById("robot");
+  var msgs = document.getElementById("messages");
+  var form = document.getElementById("chat-form");
+  var input = document.getElementById("chat-input");
+  var status = document.getElementById("status");
+  var sources = document.getElementById("sources");
+  var robot = document.getElementById("robot");
 
   function addBubble(text, who) {
-    const div = document.createElement("div");
+    var div = document.createElement("div");
     div.className = "bubble " + who;
     div.textContent = text;
     msgs.appendChild(div);
@@ -80,28 +82,27 @@
       sources.innerHTML = '<p class="muted">לא נמצאו מקורות נוספים</p>';
       return;
     }
-    let html = '<ul class="sources-list">';
-    context.forEach(function(src, i) {
-      html += '<li><strong>מקור ' + (i + 1) + ':</strong> ' + src + '</li>';
-    });
+    var html = '<ul class="sources-list">';
+    for (var i = 0; i < context.length; i++) {
+      html += '<li>' + context[i] + '</li>';
+    }
     html += '</ul>';
     sources.innerHTML = html;
   }
 
-  async function askQuestion(question) {
+  function askQuestion(question) {
     addBubble(question, "user");
-    const bot = addBubble("מחפש תשובה...", "bot");
+    var bot = addBubble("מחפש תשובה...", "bot");
     sources.innerHTML = '<p class="muted">מחפש מקורות...</p>';
     robot.classList.add("thinking");
     
-    try {
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({question: question, k: 5})
-      });
-      const data = await res.json();
-      
+    fetch("/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: question, k: 5})
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
       if (data.error) {
         bot.textContent = "שגיאה: " + data.error;
         sources.innerHTML = '<p class="muted">שגיאה בטעינת מקורות</p>';
@@ -109,21 +110,24 @@
         bot.textContent = data.answer;
         showSources(data.context);
       }
-    } catch(e) {
+    })
+    .catch(function(e) {
       bot.textContent = "שגיאת חיבור לשרת";
       sources.innerHTML = '<p class="muted">שגיאת חיבור</p>';
-    } finally {
+    })
+    .finally(function() {
       robot.classList.remove("thinking");
-    }
+    });
   }
 
-  // Example buttons - use data-question attribute
-  document.querySelectorAll(".example-btn").forEach(function(btn) {
-    btn.addEventListener("click", function() {
-      var question = btn.getAttribute("data-question");
+  // Example buttons
+  var exampleBtns = document.querySelectorAll(".example-btn");
+  for (var i = 0; i < exampleBtns.length; i++) {
+    exampleBtns[i].addEventListener("click", function() {
+      var question = this.getAttribute("data-question");
       askQuestion(question);
     });
-  });
+  }
 
   // Form submit
   form.addEventListener("submit", function(e) {
