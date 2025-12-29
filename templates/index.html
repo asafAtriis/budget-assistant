@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}יועץ תקציב משפחתי{% endblock %}
+
+{% block content %}
+<section class="grid">
+  <!-- Right: Robot + Chat (RTL - so this appears on right) -->
+  <div class="col chat-col card">
+    <div class="robot-stage">
+      <div id="robot" class="robot">
+        <div class="antenna"><span class="tip"></span></div>
+        <div class="head">
+          <div class="eyes">
+            <span class="eye left"><i></i></span>
+            <span class="eye right"><i></i></span>
+          </div>
+          <div class="mouth"></div>
+        </div>
+        <div class="body">
+          <div class="panel">
+            <span class="shekel">₪</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="messages" class="messages" aria-live="polite">
+      <div class="bubble bot">שלום! 👋 אני היועץ הפיננסי שלך. אשמח לעזור לך בכל שאלה על ניהול תקציב משפחתי, חיסכון, הלוואות, מיסים והטבות בישראל.</div>
+    </div>
+
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input id="chat-input" type="text" placeholder="שאל אותי על ניהול תקציב..." required />
+      <div class="controls">
+        <label class="k-label">
+          תוצאות
+          <input id="topk" type="number" min="1" max="10" value="5">
+        </label>
+        <button id="send-btn" type="submit">שלח</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Left: Info panel -->
+  <div class="col docs-col">
+    <section class="card">
+      <h2>📊 סטטוס מערכת</h2>
+      <div id="status" class="status-box">בודק חיבור...</div>
+    </section>
+
+    <section class="card">
+      <h2>📚 מקורות מידע</h2>
+      <details id="ctx-details" open>
+        <summary>הצג/הסתר</summary>
+        <ol id="context-list" class="context-list"></ol>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>💡 שאלות לדוגמה</h2>
+      <div class="examples">
+        <button class="example-btn" data-q="כמה כסף צריך לשים בקרן חירום?">קרן חירום</button>
+        <button class="example-btn" data-q="מהן ההוצאות הטיפוסיות של משפחה בישראל?">הוצאות משפחה</button>
+        <button class="example-btn" data-q="איך לחסוך בהוצאות חודשיות?">טיפים לחיסכון</button>
+        <button class="example-btn" data-q="מה זה כלל 50/30/20?">כלל התקציב</button>
+        <button class="example-btn" data-q="כמה קצבת ילדים מקבלים ב-2024?">קצבאות</button>
+        <button class="example-btn" data-q="איך לנהל חובות והלוואות?">ניהול חובות</button>
+      </div>
+    </section>
+  </div>
+</section>
+
+<script>
+const msgs  = document.getElementById("messages");
+const robot = document.getElementById("robot");
+const input = document.getElementById("chat-input");
+const form  = document.getElementById("chat-form");
+const sendBtn = document.getElementById("send-btn");
+const topKEl  = document.getElementById("topk");
+const ctxList = document.getElementById("context-list");
+const statusEl = document.getElementById("status");
+
+// Bubble helpers
+function addBubble(text, who="user") {
+  const wrap = document.createElement("div");
+  wrap.className = `bubble ${who}`;
+  wrap.textContent = text;
+  msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+  return wrap;
+}
+
+async function typeInto(el, text, delay=15) {
+  el.textContent = "";
+  for (let i = 0; i < text.length; i++) {
+    el.textContent += text[i];
+    await new Promise(r => setTimeout(r, delay));
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+
+function setThinking(on) {
+  robot.classList.toggle("thinking", on);
+  sendBtn.disabled = on;
+}
+
+// Health/status
+async function refreshHealth() {
+  try {
+    const res = await fetch("/health");
+    const data = await res.json();
+    if (data.knowledge_base_configured) {
+      statusEl.innerHTML = `
+        <div class="status-ok">✅ מחובר</div>
+        <div class="status-detail">Region: ${data.region}</div>
+        <div class="status-detail">Model: ${data.model.split('.')[1] || data.model}</div>
+        <div class="status-detail">KB: ${data.knowledge_base_id || 'N/A'}</div>
+      `;
+    } else {
+      statusEl.innerHTML = `<div class="status-error">⚠️ Knowledge Base לא מוגדר</div>`;
+    }
+  } catch {
+    statusEl.innerHTML = `<div class="status-error">❌ שגיאת חיבור</div>`;
+  }
+}
+
+// Example questions
+document.querySelectorAll('.example-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    input.value = btn.dataset.q;
+    form.dispatchEvent(new Event('submit'));
+  });
+});
+
+// Chat
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = input.value.trim();
+  if (!question) return;
+  const k = Math.max(1, Math.min(10, parseInt(topKEl.value || "5", 10)));
+
+  // user bubble
+  addBubble(question, "user");
+  input.value = "";
+
+  // bot bubble placeholder
+  const botBubble = addBubble("...", "bot");
+  setThinking(true);
+
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ question, k })
+    });
+    const data = await res.json();
+
+    // context on the side panel
+    ctxList.innerHTML = "";
+    (data.context || []).forEach((c, i) => {
+      const li = document.createElement("li");
+      li.textContent = c;
+      ctxList.appendChild(li);
+    });
+
+    if (data.error) {
+      await typeInto(botBubble, "⚠️ " + data.error, 10);
+    } else {
+      await typeInto(botBubble, data.answer || "(אין תשובה)", 8);
+    }
+  } catch (err) {
+    await typeInto(botBubble, "⚠️ לא ניתן להתחבר לשרת", 12);
+  } finally {
+    setThinking(false);
+  }
+});
+
+// init
+refreshHealth();
+</script>
+{% endblock %}

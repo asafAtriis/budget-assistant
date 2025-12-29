@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}יועץ תקציב משפחתי{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <header class="header">
+    <h1>💰 יועץ תקציב משפחתי</h1>
+    <span class="subtitle">מבוסס על AWS Bedrock Knowledge Base</span>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">
+    <small>AWS Bedrock · Knowledge Base · Claude</small>
+  </footer>
+</body>
+</html>
