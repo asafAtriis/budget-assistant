@@ -1,25 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="grid">
+  <!-- Chat Column -->
   <div class="col chat-col card">
+    <div class="robot-stage">
+      <div id="robot" class="robot">
+        <div class="antenna"><span class="tip"></span></div>
+        <div class="head">
+          <div class="eyes">
+            <span class="eye left"><i></i></span>
+            <span class="eye right"><i></i></span>
+          </div>
+          <div class="mouth"></div>
+        </div>
+        <div class="body">
+          <div class="panel">
+            <span class="shekel">₪</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="messages" class="messages">
       <div class="bubble bot">שלום! 👋 אני היועץ הפיננסי שלך. שאל אותי על ניהול תקציב משפחתי בישראל.</div>
     </div>
+
     <form id="chat-form" class="chat-form">
       <input id="chat-input" type="text" placeholder="שאל אותי על ניהול תקציב..." required />
       <button type="submit">שלח</button>
     </form>
+
     <div class="examples">
       <p>שאלות לדוגמה:</p>
-      <button type="button" class="example-btn">קרן חירום</button>
-      <button type="button" class="example-btn">הוצאות משפחה</button>
-      <button type="button" class="example-btn">טיפים לחיסכון</button>
-      <button type="button" class="example-btn">כלל התקציב</button>
-      <button type="button" class="example-btn">קצבאות</button>
-      <button type="button" class="example-btn">ניהול חובות</button>
+      <button type="button" class="example-btn" data-question="כמה כסף צריך לשים בקרן חירום?">קרן חירום</button>
+      <button type="button" class="example-btn" data-question="מהן ההוצאות הטיפוסיות של משפחה בישראל?">הוצאות משפחה</button>
+      <button type="button" class="example-btn" data-question="איך אפשר לחסוך בהוצאות החודשיות?">טיפים לחיסכון</button>
+      <button type="button" class="example-btn" data-question="מה זה כלל 50/30/20 לניהול תקציב?">כלל התקציב</button>
+      <button type="button" class="example-btn" data-question="כמה קצבת ילדים מקבלים בישראל?">קצבאות</button>
+      <button type="button" class="example-btn" data-question="איך לנהל חובות והלוואות בצורה נכונה?">ניהול חובות</button>
     </div>
   </div>
 
+  <!-- Info Column -->
   <div class="col docs-col">
     <section class="card">
       <h2>📊 סטטוס מערכת</h2>
@@ -42,6 +64,7 @@
   const input = document.getElementById("chat-input");
   const status = document.getElementById("status");
   const sources = document.getElementById("sources");
+  const robot = document.getElementById("robot");
 
   function addBubble(text, who) {
     const div = document.createElement("div");
@@ -54,7 +77,7 @@
 
   function showSources(context) {
     if (!context || context.length === 0) {
-      sources.innerHTML = '<p class="muted">לא נמצאו מקורות</p>';
+      sources.innerHTML = '<p class="muted">לא נמצאו מקורות נוספים</p>';
       return;
     }
     let html = '<ul class="sources-list">';
@@ -69,6 +92,7 @@
     addBubble(question, "user");
     const bot = addBubble("מחפש תשובה...", "bot");
     sources.innerHTML = '<p class="muted">מחפש מקורות...</p>';
+    robot.classList.add("thinking");
     
     try {
       const res = await fetch("/ask", {
@@ -88,30 +112,37 @@
     } catch(e) {
       bot.textContent = "שגיאת חיבור לשרת";
       sources.innerHTML = '<p class="muted">שגיאת חיבור</p>';
+    } finally {
+      robot.classList.remove("thinking");
     }
   }
 
+  // Example buttons - use data-question attribute
   document.querySelectorAll(".example-btn").forEach(function(btn) {
     btn.addEventListener("click", function() {
-      askQuestion(btn.textContent);
+      var question = btn.getAttribute("data-question");
+      askQuestion(question);
     });
   });
 
+  // Form submit
   form.addEventListener("submit", function(e) {
     e.preventDefault();
-    const q = input.value.trim();
+    var q = input.value.trim();
     if (q) {
       askQuestion(q);
       input.value = "";
     }
   });
 
+  // Health check
   fetch("/health")
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.knowledge_base_configured) {
         status.innerHTML = '<div class="status-ok">✅ מחובר</div>' +
           '<div class="status-detail">Region: ' + d.region + '</div>' +
+          '<div class="status-detail">Model: ' + d.model + '</div>' +
           '<div class="status-detail">KB: ' + (d.knowledge_base_id || 'N/A') + '</div>';
       } else {
         status.innerHTML = '<div class="status-error">⚠️ Knowledge Base לא מוגדר</div>';
