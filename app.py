@@ -272,56 +272,28 @@ def ask():
         print(f"Error processing question: {e}")
         return jsonify({"error": f"שגיאה: {str(e)}"}), 500
 
-
-@app.route("/retrieve", methods=["POST"])
-def retrieve_only():
-    """Debug endpoint - retrieve without generating (RAG mode only)."""
-    if MODE != "RAG":
-        return jsonify({"error": "Available only in RAG mode"}), 400
-    
-    data = request.get_json(force=True, silent=True) or {}
-    question = (data.get("question") or "").strip()
-    k = min(int(data.get("k", 5)), 10)
-    
-    if not question:
-        return jsonify({"error": "נא לספק שאלה"}), 400
-    
-    if not KNOWLEDGE_BASE_ID:
-        return jsonify({"error": "Knowledge Base לא מוגדר"}), 500
-    
-    try:
-        contexts = retrieve_from_knowledge_base(question, k)
-        return jsonify({
-            "question": question,
-            "results": contexts,
-            "count": len(contexts)
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 # ============== Main ==============
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🚀 Starting Budget Assistant")
+    print("Starting Budget Assistant")
     print("=" * 60)
-    print(f"📍 Region: {AWS_REGION}")
-    print(f"🎛️  Mode: {MODE}")
+    print(f"Region: {AWS_REGION}")
+    print(f" Mode: {MODE}")
     print("-" * 60)
     
     if MODE == "AGENT":
-        print(f"🤖 Agent ID: {AGENT_ID or '❌ NOT SET!'}")
-        print(f"🏷️  Alias ID: {AGENT_ALIAS_ID or '❌ NOT SET!'}")
+        print(f" Agent ID: {AGENT_ID or ' NOT SET!'}")
+        print(f"  Alias ID: {AGENT_ALIAS_ID or ' NOT SET!'}")
         if not AGENT_ID or not AGENT_ALIAS_ID:
-            print("\n⚠️  Set Agent variables:")
+            print("\n  Set Agent variables:")
             print("   export AGENT_ID=your-agent-id")
             print("   export AGENT_ALIAS_ID=your-alias-id")
     else:
-        print(f"📚 Knowledge Base: {KNOWLEDGE_BASE_ID or '❌ NOT SET!'}")
-        print(f"🧠 Model: {MODEL_ID}")
+        print(f" Knowledge Base: {KNOWLEDGE_BASE_ID or ' NOT SET!'}")
+        print(f" Model: {MODEL_ID}")
         if not KNOWLEDGE_BASE_ID:
-            print("\n⚠️  Set Knowledge Base variable:")
+            print("\n  Set Knowledge Base variable:")
             print("   export KNOWLEDGE_BASE_ID=your-kb-id")
     
     print("=" * 60)
