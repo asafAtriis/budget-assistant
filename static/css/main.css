@@ -274,15 +274,16 @@ body {
 
 /* ============== Messages Area ============== */
 .messages {
-  flex: 1;
-  min-height: 150px;
-  max-height: 100%;
+  height: 350px;
+  min-height: 200px;
+  max-height: 350px;
   overflow-y: auto;
   padding: 0.75rem;
   border: 1px dashed var(--border);
   border-radius: 10px;
   background: #0c1629;
   margin-bottom: 0.75rem;
+  flex-shrink: 0;
 }
 
 .bubble {
@@ -569,8 +570,10 @@ body {
     left: -3px;
   }
   
-  .messages {
-    min-height: 120px;
+ .messages {
+    height: 250px;
+    min-height: 200px;
+    max-height: 250px;
     padding: 0.5rem;
     margin-bottom: 0.5rem;
   }
